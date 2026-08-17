@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ห้องเรียนการออกแบบเทคโนโลยี แบบวิ่งตอบ v.1 (ป.6)</title>
+    
+    <!-- Fonts and Styling -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Kanit', sans-serif; touch-action: none; overflow: hidden; background-color: #0f172a; }
+        .glow-text { text-shadow: 0 0 10px rgba(255,255,255,0.8), 0 0 20px rgba(255,255,255,0.5); }
+    </style>
+
+    <!-- MediaPipe Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+</head>
+<body class="text-white select-none relative w-screen h-screen">
+
+    <!-- Hidden Video for Camera Stream -->
+    <video id="videoElement" class="hidden" autoplay playsinline></video>
+    
+    <!-- Main Game Canvas -->
+    <canvas id="gameCanvas" class="absolute inset-0 w-full h-full z-0 block"></canvas>
+
+    <!-- Start Screen Overlay -->
+    <div id="startScreen" class="absolute inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center p-6">
+        <div class="text-8xl mb-6 animate-bounce">🏃‍♀️</div>
+        <h1 class="text-4xl md:text-6xl font-bold text-center text-white mb-4 leading-snug drop-shadow-lg">
+            ห้องเรียนการออกแบบเทคโนโลยี<br>
+            <span class="text-blue-400">แบบวิ่งตอบ v.1</span> <span class="text-3xl text-gray-300">(ป.6)</span>
+        </h1>
+        <div class="bg-white/10 backdrop-blur-md rounded-2xl p-6 mb-10 max-w-lg text-center border border-white/20 shadow-2xl">
+            <h3 class="text-xl font-semibold text-blue-300 mb-2">วิธีเล่น</h3>
+            <p class="text-gray-200 text-lg leading-relaxed">
+                1. กดเริ่มเล่นแล้วอนุญาตการใช้กล้อง<br>
+                2. <strong>ถอยห่างจากกล้องให้เห็นเต็มตัว</strong><br>
+                3. วิ่งไปยืนในช่องคำตอบที่ถูก แล้วยืนนิ่งๆ ให้วงแหวนเต็ม
+            </p>
+        </div>
+        <button id="startBtn" class="px-12 py-5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-full font-bold text-3xl shadow-[0_0_20px_rgba(59,130,246,0.6)] transition-all transform hover:scale-105 active:scale-95">
+            เริ่มเล่นเลย!
+        </button>
+    </div>
+
+    <!-- Loading Screen Overlay -->
+    <div id="loadingScreen" class="absolute inset-0 bg-slate-900 z-40 flex flex-col items-center justify-center hidden">
+        <div class="animate-spin rounded-full h-24 w-24 border-t-8 border-b-8 border-blue-500 mb-6 drop-shadow-[0_0_15px_rgba(59,130,246,0.8)]"></div>
+        <h2 class="text-3xl text-white font-bold tracking-wide">กำลังเปิดกล้องและโหลด AI...</h2>
+        <p class="text-blue-300 mt-4 text-xl animate-pulse">กรุณากดอนุญาตให้เว็บไซต์ใช้กล้องของคุณ</p>
+    </div>
+
+    <!-- Top Panel: Question Display -->
+    <div id="topPanel" class="absolute top-0 left-0 w-full p-4 md:p-6 flex flex-col items-center pointer-events-none z-20 opacity-0 transition-opacity duration-300 hidden">
+        <div class="bg-white/95 backdrop-blur-md px-6 py-2 rounded-full shadow-lg border-b-4 border-blue-400 mb-4 flex items-center gap-3">
+            <span id="levelBadge" class="font-bold text-blue-700 text-xl tracking-wide">ด่าน 1</span>
+            <div class="w-2 h-2 rounded-full bg-gray-400"></div>
+            <span id="questionCount" class="text-gray-600 font-semibold text-lg">ข้อ 1/3</span>
+        </div>
+        <div class="bg-gradient-to-br from-indigo-600 to-blue-700 text-white px-8 md:px-12 py-5 md:py-6 rounded-3xl shadow-2xl border-4 border-indigo-300 max-w-4xl text-center w-[90%] md:w-auto">
+            <h2 id="questionText" class="text-2xl md:text-4xl font-bold leading-tight drop-shadow-md">คำถามจะแสดงที่นี่?</h2>
+        </div>
+    </div>
+
+    <!-- Level Transition Banner -->
+    <div id="levelBannerOverlay" class="absolute inset-0 bg-slate-900/80 z-30 flex items-center justify-center opacity-0 transition-opacity duration-500 hidden pointer-events-none">
+        <div class="bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 px-20 py-10 rounded-[3rem] shadow-[0_0_50px_rgba(249,115,22,0.6)] transform scale-110">
+            <h1 id="levelBanner" class="text-7xl font-extrabold text-white drop-shadow-lg tracking-wider">ด่าน 1</h1>
+        </div>
+    </div>
+
+    <!-- Feedback Banner (Correct / Wrong) -->
+    <div id="feedbackPanel" class="absolute inset-0 flex items-center justify-center pointer-events-none z-30 opacity-0 transition-opacity duration-200">
+        <div id="feedbackBox" class="px-16 py-8 rounded-[2rem] shadow-2xl transform scale-50 transition-transform duration-300 text-white font-extrabold text-6xl md:text-8xl drop-shadow-xl border-4 border-white/20">
+            ถูกต้อง!
+        </div>
+    </div>
+
+    <!-- End Game Screen -->
+    <div id="endScreen" class="absolute inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center hidden">
+        <div class="text-9xl mb-8 animate-bounce drop-shadow-[0_0_30px_rgba(250,204,21,0.8)]">🎖️</div>
+        <h1 class="text-5xl md:text-7xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-400 to-yellow-600 mb-4 glow-text">ยอดเยี่ยมมาก!</h1>
+        <p class="text-2xl md:text-3xl text-blue-100 mb-12">คุณผ่านการทดสอบห้องเรียนการออกแบบเทคโนโลยีแล้ว</p>
+        <button id="restartBtn" class="px-12 py-5 bg-gradient-to-r from-green-400 to-emerald-600 hover:from-green-500 hover:to-emerald-700 rounded-full text-3xl font-bold text-white shadow-[0_0_20px_rgba(52,211,153,0.5)] transform transition-all hover:scale-105 active:scale-95 border-2 border-green-300">
+            เล่นอีกครั้ง 🔄
+        </button>
+    </div>
+
+    <script>
+        // Game Content Data
+        const levelData = [
+            {
+                level: 1,
+                questions: [
+                    { q: "กราฟแท่งเหมาะกับการแสดงข้อมูลแบบใด", opts: ["เล่าเรื่องราว", "บอกสัดส่วนรวม", "เปรียบเทียบค่า"], ans: 2 },
+                    { q: "แผนภูมิวงกลมใช้แสดงสิ่งใดได้ดีที่สุด", opts: ["สัดส่วนร้อยละ", "ลำดับเวลา", "ระยะทาง"], ans: 0 },
+                    { q: "การนำเสนอควรเริ่มด้วยสิ่งใด", opts: ["คำขอบคุณ", "ที่มาของปัญหา", "ผลสรุปทั้งหมด"], ans: 1 }
+                ]
+            },
+            {
+                level: 2,
+                questions: [
+                    { q: "เวลานำเสนอควรใช้ภาษาลักษณะใด", opts: ["ศัพท์ยากมาก", "ภาษาแสลง", "เข้าใจง่าย"], ans: 2 },
+                    { q: "การรับฟังข้อเสนอแนะจากเพื่อนมีประโยชน์อย่างไร", opts: ["ลดเวลาทำงาน", "ปรับปรุงงานได้", "ได้คะแนนพิเศษ"], ans: 1 },
+                    { q: "การทำต้นแบบด้วยกระดาษแข็งมีข้อดีข้อใด", opts: ["แก้ไขได้ง่าย", "ทนน้ำได้ดี", "แข็งแรงที่สุด"], ans: 0 }
+                ]
+            },
+            {
+                level: 3,
+                questions: [
+                    { q: "เมื่อผลงานหนักเกินไปควรปรับปรุงด้วยวิธีใด", opts: ["ลดวัสดุที่ใช้", "เพิ่มชั้นวัสดุ", "ทาสีให้หนา"], ans: 0 },
+                    { q: "หากรถของเล่นวิ่งเบี้ยวควรตรวจสอบสิ่งใดก่อน", opts: ["แนวเพลาล้อ", "ชื่อผู้สร้าง", "สีของตัวรถ"], ans: 0 },
+                    { q: "การยึดชิ้นส่วนแบบใดถอดประกอบใหม่ได้ง่ายที่สุด", opts: ["ใช้กาวถาวร", "เชื่อมโลหะ", "ใช้สกรู"], ans: 2 }
+                ]
+            }
+        ];
+
+        // Global State Variables
+        let currentLevelIndex = 0;
+        let currentQuestionIndex = 0;
+        let gameState = 'START'; // START, LOADING, PLAYING, FEEDBACK, LEVEL_TRANSITION, END
+        
+        // Tracking State
+        let holdProgress = 0; // 0.0 to 1.5 seconds
+        let activeZone = -1;
+        let latestPose = null;
+        let lastBodyX = 0, lastBodyY = 0;
+        
+        // Visual Effects State
+        let particles = [];
+        let shakeIntensity = 0;
+        let feedbackText = "";
+        let feedbackColor = "";
+        let lastTime = 0;
+
+        // Audio Engine
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioContext();
+
+        function playTone(freq, type, duration, vol=0.1) {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playCorrect() {
+            playTone(659.25, 'sine', 0.1, 0.2); // E5
+            setTimeout(() => playTone(1046.50, 'sine', 0.3, 0.25), 100); // C6
+        }
+
+        function playWrong() {
+            playTone(300, 'sawtooth', 0.2, 0.15);
+            setTimeout(() => playTone(250, 'sawtooth', 0.4, 0.2), 150);
+        }
+
+        function playWin() {
+            const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+            notes.forEach((freq, i) => {
+                setTimeout(() => playTone(freq, 'sine', 0.15, 0.2), i * 150);
+            });
+            setTimeout(() => {
+                playTone(1046.50, 'square', 0.5, 0.15);
+                playTone(1318.51, 'sine', 0.5, 0.15); // E6
+            }, notes.length * 150);
+        }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'th-TH';
+                utterance.rate = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // Canvas Setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const videoElement = document.getElementById('videoElement');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Particle System for Stars
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 400 + 150;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.life = 1.0;
+                this.decay = Math.random() * 0.02 + 0.015;
+                this.size = Math.random() * 15 + 8;
+                this.rot = Math.random() * Math.PI * 2;
+                this.vRot = (Math.random() - 0.5) * 15;
+                this.color = `hsl(${Math.random() * 50 + 35}, 100%, 50%)`; // Gold to Yellow hues
+            }
+            update(dt) {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                this.vy += 600 * dt; // Gravity
+                this.rot += this.vRot * dt;
+                this.life -= this.decay;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rot);
+                ctx.globalAlpha = Math.max(0, this.life);
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 10;
+                
+                // Draw 5-pointed star
+                ctx.beginPath();
+                for (let i = 0; i < 5; i++) {
+                    ctx.lineTo(Math.cos((18 + i * 72) * Math.PI / 180) * this.size,
+                               -Math.sin((18 + i * 72) * Math.PI / 180) * this.size);
+                    ctx.lineTo(Math.cos((54 + i * 72) * Math.PI / 180) * (this.size/2.5),
+                               -Math.sin((54 + i * 72) * Math.PI / 180) * (this.size/2.5));
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function createStars(x, y) {
+            for(let i=0; i < 40; i++) {
+                particles.push(new Particle(x, y));
+            }
+        }
+
+        // Helper for fitting text inside canvas columns
+        function fitText(ctx, text, x, y, maxWidth) {
+            let fontSize = Math.min(36, canvas.width / 25); // Responsive base max size
+            ctx.font = `bold ${fontSize}px Kanit`;
+            while(ctx.measureText(text).width > maxWidth && fontSize > 14) {
+                fontSize--;
+                ctx.font = `bold ${fontSize}px Kanit`;
+            }
+            ctx.fillText(text, x, y);
+        }
+
+        // MediaPipe Initialization
+        const pose = new Pose({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+        }});
+
+        pose.setOptions({
+            modelComplexity: 1, // Balance between performance and accuracy
+            smoothLandmarks: true,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        pose.onResults((results) => {
+            latestPose = results.poseLandmarks;
+        });
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                if (gameState !== 'START' && gameState !== 'LOADING') {
+                    await pose.send({image: videoElement});
+                }
+            },
+            width: 640,
+            height: 480
+        });
+
+        // Game Flow Functions
+        document.getElementById('startBtn').addEventListener('click', () => {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('loadingScreen').classList.remove('hidden');
+            gameState = 'LOADING';
+            
+            camera.start().then(() => {
+                document.getElementById('loadingScreen').classList.add('hidden');
+                startGame();
+            }).catch(err => {
+                document.getElementById('loadingScreen').innerHTML = `<h2 class="text-3xl text-red-500 font-bold">ไม่สามารถเข้าถึงกล้องได้</h2><p class="text-white mt-4">${err}</p>`;
+            });
+        });
+
+        function startGame() {
+            currentLevelIndex = 0;
+            currentQuestionIndex = 0;
+            particles = [];
+            speak("วิ่งไปยืนในช่องคำตอบที่ถูก แล้วยืนนิ่งๆ ให้วงแหวนเต็ม!");
+            startLevelTransition();
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startLevelTransition() {
+            gameState = 'LEVEL_TRANSITION';
+            const overlay = document.getElementById('levelBannerOverlay');
+            const banner = document.getElementById('levelBanner');
+            
+            banner.innerText = `ด่าน ${currentLevelIndex + 1}`;
+            overlay.classList.remove('hidden');
+            document.getElementById('topPanel').classList.add('hidden');
+            
+            // Fade in
+            setTimeout(() => overlay.classList.replace('opacity-0', 'opacity-100'), 50);
+            
+            // Fade out and start question
+            setTimeout(() => {
+                overlay.classList.replace('opacity-100', 'opacity-0');
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    setupQuestion();
+                }, 500);
+            }, 2500);
+        }
+
+        function setupQuestion() {
+            gameState = 'PLAYING';
+            holdProgress = 0;
+            activeZone = -1;
+            
+            const qData = levelData[currentLevelIndex];
+            const q = qData.questions[currentQuestionIndex];
+            
+            document.getElementById('levelBadge').innerText = `ด่าน ${currentLevelIndex + 1}`;
+            document.getElementById('questionCount').innerText = `ข้อ ${currentQuestionIndex + 1}/${qData.questions.length}`;
+            document.getElementById('questionText').innerText = q.q;
+            
+            const topPanel = document.getElementById('topPanel');
+            topPanel.classList.remove('hidden');
+            setTimeout(() => topPanel.classList.replace('opacity-0', 'opacity-100'), 50);
+        }
+
+        function checkAnswer(selectedZone) {
+            gameState = 'FEEDBACK';
+            const qData = levelData[currentLevelIndex];
+            const q = qData.questions[currentQuestionIndex];
+            
+            const panel = document.getElementById('feedbackPanel');
+            const box = document.getElementById('feedbackBox');
+            
+            if (selectedZone === q.ans) {
+                // Correct
+                playCorrect();
+                createStars(lastBodyX, lastBodyY);
+                speak("ถูกต้องเก่งมาก");
+                
+                feedbackText = 'ถูกต้อง! ⭐️';
+                feedbackColor = 'linear-gradient(135deg, #22c55e, #16a34a)';
+                
+                showFeedback(panel, box, () => {
+                    currentQuestionIndex++;
+                    if(currentQuestionIndex >= qData.questions.length) {
+                        currentLevelIndex++;
+                        currentQuestionIndex = 0;
+                        if(currentLevelIndex >= levelData.length) {
+                            endGame();
+                        } else {
+                            startLevelTransition();
+                        }
+                    } else {
+                        setupQuestion();
+                    }
+                }, 2000);
+                
+            } else {
+                // Wrong
+                playWrong();
+                shakeIntensity = 30; // Triggers screen shake
+                speak("พยายามใหม่นะ");
+                
+                feedbackText = 'พยายามใหม่! ❌';
+                feedbackColor = 'linear-gradient(135deg, #ef4444, #dc2626)';
+                
+                showFeedback(panel, box, () => {
+                    gameState = 'PLAYING';
+                    holdProgress = 0;
+                    activeZone = -1;
+                }, 1500);
+            }
+        }
+
+        function showFeedback(panel, box, callback, duration) {
+            box.innerText = feedbackText;
+            box.style.background = feedbackColor;
+            
+            panel.classList.remove('opacity-0');
+            box.classList.remove('scale-50');
+            box.classList.add('scale-100');
+            
+            setTimeout(() => {
+                panel.classList.add('opacity-0');
+                box.classList.replace('scale-100', 'scale-50');
+                setTimeout(callback, 300);
+            }, duration);
+        }
+
+        function endGame() {
+            gameState = 'END';
+            document.getElementById('topPanel').classList.add('hidden');
+            document.getElementById('endScreen').classList.remove('hidden');
+            playWin();
+            speak("ยินดีด้วย คุณผ่านทุกด่านและรับเหรียญรางวัลแล้ว");
+        }
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            document.getElementById('endScreen').classList.add('hidden');
+            startGame();
+        });
+
+        // Main Render Loop
+        function gameLoop(time) {
+            if(gameState !== 'START') requestAnimationFrame(gameLoop);
+            
+            const dt = (time - lastTime) / 1000;
+            lastTime = time;
+            
+            // Cap dt to prevent massive jumps if tab is backgrounded
+            if (dt > 0.1) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Video logic
+            if (videoElement.videoWidth > 0) {
+                const cRatio = canvas.width / canvas.height;
+                const vRatio = videoElement.videoWidth / videoElement.videoHeight;
+                let dW, dH, dX, dY;
+                
+                // object-fit: cover calculation
+                if (cRatio > vRatio) {
+                    dW = canvas.width;
+                    dH = canvas.width / vRatio;
+                    dX = 0;
+                    dY = (canvas.height - dH) / 2;
+                } else {
+                    dW = canvas.height * vRatio;
+                    dH = canvas.height;
+                    dX = (canvas.width - dW) / 2;
+                    dY = 0;
+                }
+
+                ctx.save();
+                
+                // Apply Camera Shake Effect
+                if (shakeIntensity > 0) {
+                    ctx.translate((Math.random()-0.5)*shakeIntensity, (Math.random()-0.5)*shakeIntensity);
+                    shakeIntensity -= dt * 80;
+                    if(shakeIntensity < 0) shakeIntensity = 0;
+                }
+
+                // Draw Mirrored Video feed
+                ctx.save();
+                ctx.translate(canvas.width, 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(videoElement, dX, dY, dW, dH);
+                ctx.restore();
+
+                // Darken video for better UI contrast
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.4)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Process Body Tracking & Game Logic
+                let isTracking = false;
+                let rawX = 0, rawY = 0;
+
+                if (latestPose && (gameState === 'PLAYING' || gameState === 'FEEDBACK')) {
+                    const l11 = latestPose[11], l12 = latestPose[12]; // Shoulders
+                    const l23 = latestPose[23], l24 = latestPose[24]; // Hips
+                    
+                    let visX = [], visY = [];
+                    // Collect visible body parts to calculate a robust center of mass
+                    if(l11 && l11.visibility > 0.6) { visX.push(l11.x); visY.push(l11.y); }
+                    if(l12 && l12.visibility > 0.6) { visX.push(l12.x); visY.push(l12.y); }
+                    if(l23 && l23.visibility > 0.6) { visX.push(l23.x); visY.push(l23.y); }
+                    if(l24 && l24.visibility > 0.6) { visX.push(l24.x); visY.push(l24.y); }
+
+                    if (visX.length >= 2) {
+                        isTracking = true;
+                        rawX = visX.reduce((a,b)=>a+b,0) / visX.length;
+                        rawY = visY.reduce((a,b)=>a+b,0) / visY.length;
+                    } else if (latestPose[0] && latestPose[0].visibility > 0.7) {
+                        // Fallback to nose if shoulders aren't visible
+                        isTracking = true;
+                        rawX = latestPose[0].x;
+                        rawY = latestPose[0].y;
+                    }
+                }
+
+                const zoneWidth = canvas.width / 3;
+
+                // Map normalized coordinates to mirrored screen space
+                if (isTracking) {
+                    const mirroredX = 1 - rawX;
+                    lastBodyX = dX + mirroredX * dW;
+                    lastBodyY = dY + rawY * dH;
+                    
+                    if (gameState === 'PLAYING') {
+                        let currentZone = -1;
+                        // Use clamping logic to ensure off-screen edge movements map to outer zones
+                        if (lastBodyX < zoneWidth) currentZone = 0;
+                        else if (lastBodyX < zoneWidth * 2) currentZone = 1;
+                        else currentZone = 2;
+
+                        if (currentZone === activeZone) {
+                            holdProgress += dt;
+                            if (holdProgress >= 1.5) { // 1.5 seconds to confirm answer
+                                checkAnswer(currentZone);
+                            }
+                        } else {
+                            activeZone = currentZone;
+                            holdProgress = 0;
+                        }
+                    }
+                } else {
+                    if (gameState === 'PLAYING') {
+                        activeZone = -1;
+                        holdProgress = 0;
+                    }
+                }
+
+                // Draw 3 Answer Zones
+                if (gameState === 'PLAYING' || gameState === 'FEEDBACK') {
+                    const qOptions = levelData[currentLevelIndex].questions[currentQuestionIndex].opts;
+                    const boxHeight = 100;
+                    const yPos = canvas.height - boxHeight - 20;
+
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+
+                    for (let i = 0; i < 3; i++) {
+                        const xStart = i * zoneWidth;
+                        const cx = xStart + zoneWidth / 2;
+
+                        // Highlight active column
+                        if (activeZone === i && gameState === 'PLAYING') {
+                            const grad = ctx.createLinearGradient(0, canvas.height, 0, 0);
+                            grad.addColorStop(0, 'rgba(255,255,255,0.3)');
+                            grad.addColorStop(1, 'rgba(255,255,255,0.0)');
+                            ctx.fillStyle = grad;
+                            ctx.fillRect(xStart, 0, zoneWidth, canvas.height);
+                        }
+
+                        // Column separator lines
+                        if (i > 0) {
+                            ctx.beginPath();
+                            ctx.moveTo(xStart, 0);
+                            ctx.lineTo(xStart, canvas.height);
+                            ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        }
+
+                        // Option Background Box
+                        ctx.fillStyle = (activeZone === i && gameState === 'PLAYING') ? 'rgba(30, 64, 175, 0.9)' : 'rgba(15, 23, 42, 0.8)';
+                        ctx.beginPath();
+                        ctx.roundRect(cx - zoneWidth/2 + 10, yPos, zoneWidth - 20, boxHeight, 24);
+                        ctx.fill();
+
+                        if (activeZone === i && gameState === 'PLAYING') {
+                            ctx.strokeStyle = '#60a5fa'; // Blue-400 glowing border
+                            ctx.lineWidth = 4;
+                            ctx.stroke();
+                        }
+
+                        // Option Text
+                        ctx.fillStyle = 'white';
+                        fitText(ctx, qOptions[i], cx, yPos + boxHeight/2, zoneWidth - 40);
+                    }
+                }
+
+                // Draw User Tracking Visuals
+                if (isTracking && (gameState === 'PLAYING' || gameState === 'FEEDBACK')) {
+                    // Background Ring
+                    ctx.beginPath();
+                    ctx.arc(lastBodyX, lastBodyY, 70, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                    ctx.lineWidth = 10;
+                    ctx.stroke();
+
+                    // Progress Ring
+                    if (holdProgress > 0 && gameState === 'PLAYING') {
+                        ctx.beginPath();
+                        ctx.arc(lastBodyX, lastBodyY, 70, -Math.PI/2, -Math.PI/2 + (holdProgress/1.5) * Math.PI * 2);
+                        ctx.strokeStyle = '#4ade80'; // Green-400
+                        ctx.lineWidth = 14;
+                        ctx.lineCap = 'round';
+                        ctx.stroke();
+                        
+                        // Add glow
+                        ctx.shadowColor = '#4ade80';
+                        ctx.shadowBlur = 15;
+                        ctx.stroke();
+                        ctx.shadowBlur = 0;
+                    }
+
+                    // Center Dot
+                    ctx.beginPath();
+                    ctx.arc(lastBodyX, lastBodyY, 18, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+                } else if (gameState === 'PLAYING' && !isTracking) {
+                    // Warning Overlay if tracking lost
+                    ctx.fillStyle = 'rgba(220, 38, 38, 0.85)';
+                    ctx.fillRect(0, canvas.height/2 - 50, canvas.width, 100);
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 36px Kanit';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('🔍 ไม่พบผู้เล่น! กรุณาถอยห่างจากกล้อง', canvas.width/2, canvas.height/2);
+                }
+
+                // Restore shake matrix
+                ctx.restore();
+
+                // Update and Draw Particles
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    let p = particles[i];
+                    p.update(dt);
+                    if (p.life <= 0) particles.splice(i, 1);
+                    else p.draw(ctx);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
